@@ -2,21 +2,28 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
-import path from "path";
-
 const app = express();
 const httpServer = createServer(app);
+
+// Enable CORS so your Netlify site can talk to this Render server
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
+    origin: "*", // This allows any website to connect
+    methods: ["GET", "POST"]
   },
 });
 
-const PORT = 3000;
+// Render provides the port in an environment variable. If it's missing, use 10000.
+const PORT = process.env.PORT || 10000;
 
-// Lobby state: key -> { players: { id: { name, ... } }, targetScore: number }
+// Lobby state
 const lobbies: Record<string, { players: Record<string, { id: string, name: string }>, targetScore: number }> = {};
 const socketToPlayer: Record<string, { lobbyKey: string, playerId: string }> = {};
+
+// Basic health check for Render
+app.get("/", (req: any, res: any) => {
+  res.send("Lobby Server is Running!");
+});
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -35,13 +42,11 @@ io.on("connection", (socket) => {
           players: remainingPlayers,
           targetScore: lobbies[lobbyKey].targetScore
         });
-        console.log(`Player ${playerId} left lobby ${lobbyKey}. Remaining: ${remainingPlayers.length}`);
       }
     }
   };
 
   socket.on("join-lobby", ({ lobbyKey, playerName, playerId }) => {
-    // Leave previous lobby if any
     const oldInfo = socketToPlayer[socket.id];
     if (oldInfo) {
       handleLeave(oldInfo.lobbyKey, oldInfo.playerId);
@@ -52,7 +57,6 @@ io.on("connection", (socket) => {
     
     if (!lobbies[lobbyKey]) {
       lobbies[lobbyKey] = { players: {}, targetScore: 100 };
-      console.log(`Created new lobby: ${lobbyKey}`);
     }
 
     lobbies[lobbyKey].players[playerId] = { id: playerId, name: playerName };
@@ -63,7 +67,6 @@ io.on("connection", (socket) => {
       players: playerList,
       targetScore: lobbies[lobbyKey].targetScore
     });
-    console.log(`Player ${playerName} (${playerId}) joined lobby ${lobbyKey}. Total players: ${playerList.length}`);
   });
 
   socket.on("update-target-score", ({ lobbyKey, targetScore }) => {
@@ -100,27 +103,10 @@ io.on("connection", (socket) => {
     if (info) {
       handleLeave(info.lobbyKey, info.playerId);
     }
-    console.log("User disconnected:", socket.id);
   });
 });
 
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(process.cwd(), "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(process.cwd(), "dist", "index.html"));
-    });
-  }
-
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
-
-startServer();
+// Simplified start command
+httpServer.listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}`);
+});
