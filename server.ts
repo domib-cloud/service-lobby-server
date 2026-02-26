@@ -4,23 +4,20 @@ import { Server } from "socket.io";
 
 const app = express();
 const httpServer = createServer(app);
-
-// Enable CORS so your Netlify site can talk to this Render server
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // This allows any website to connect
+    origin: "*", // Allows your Netlify site to connect
     methods: ["GET", "POST"]
   },
 });
 
-// Render provides the port in an environment variable. If it's missing, use 10000.
+// Use Render's port or default to 10000
 const PORT = process.env.PORT || 10000;
 
-// Lobby state
+// Lobby state: key -> { players: { id: { name, ... } }, targetScore: number }
 const lobbies: Record<string, { players: Record<string, { id: string, name: string }>, targetScore: number }> = {};
 const socketToPlayer: Record<string, { lobbyKey: string, playerId: string }> = {};
 
-// Basic health check for Render
 app.get("/", (req: any, res: any) => {
   res.send("Lobby Server is Running!");
 });
@@ -57,6 +54,7 @@ io.on("connection", (socket) => {
     
     if (!lobbies[lobbyKey]) {
       lobbies[lobbyKey] = { players: {}, targetScore: 100 };
+      console.log(`Created new lobby: ${lobbyKey}`);
     }
 
     lobbies[lobbyKey].players[playerId] = { id: playerId, name: playerName };
@@ -86,8 +84,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("start-game", ({ lobbyKey }) => {
-    io.to(lobbyKey).emit("game-started");
+  // Note: I kept the 'initialState' addition from your new AI code!
+  socket.on("start-game", ({ lobbyKey, initialState }) => {
+    io.to(lobbyKey).emit("game-started", initialState);
   });
 
   socket.on("leave-lobby", ({ lobbyKey }) => {
@@ -103,10 +102,10 @@ io.on("connection", (socket) => {
     if (info) {
       handleLeave(info.lobbyKey, info.playerId);
     }
+    console.log("User disconnected:", socket.id);
   });
 });
 
-// Simplified start command
 httpServer.listen(PORT, () => {
-  console.log(`Server is listening on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
