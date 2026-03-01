@@ -1,26 +1,22 @@
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { createServer as createViteServer } from "vite";
+import path from "path";
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // Allows your Netlify site to connect
-    methods: ["GET", "POST"]
+    origin: "*",
   },
 });
 
-// Use Render's port or default to 10000
-const PORT = process.env.PORT || 10000;
+const PORT = 3000;
 
 // Lobby state: key -> { players: { id: { name, ... } }, targetScore: number }
 const lobbies: Record<string, { players: Record<string, { id: string, name: string }>, targetScore: number }> = {};
 const socketToPlayer: Record<string, { lobbyKey: string, playerId: string }> = {};
-
-app.get("/", (req: any, res: any) => {
-  res.send("Lobby Server is Running!");
-});
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -39,11 +35,13 @@ io.on("connection", (socket) => {
           players: remainingPlayers,
           targetScore: lobbies[lobbyKey].targetScore
         });
+        console.log(`Player ${playerId} left lobby ${lobbyKey}. Remaining: ${remainingPlayers.length}`);
       }
     }
   };
 
   socket.on("join-lobby", ({ lobbyKey, playerName, playerId }) => {
+    // Leave previous lobby if any
     const oldInfo = socketToPlayer[socket.id];
     if (oldInfo) {
       handleLeave(oldInfo.lobbyKey, oldInfo.playerId);
@@ -65,6 +63,7 @@ io.on("connection", (socket) => {
       players: playerList,
       targetScore: lobbies[lobbyKey].targetScore
     });
+    console.log(`Player ${playerName} (${playerId}) joined lobby ${lobbyKey}. Total players: ${playerList.length}`);
   });
 
   socket.on("update-target-score", ({ lobbyKey, targetScore }) => {
@@ -84,9 +83,16 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Note: I kept the 'initialState' addition from your new AI code!
   socket.on("start-game", ({ lobbyKey, initialState }) => {
     io.to(lobbyKey).emit("game-started", initialState);
+  });
+
+  socket.on("game-update", ({ lobbyKey, gameState }) => {
+    io.to(lobbyKey).emit("game-updated", gameState);
+  });
+
+  socket.on("player-ready", ({ lobbyKey, playerId }) => {
+    io.to(lobbyKey).emit("player-ready-updated", playerId);
   });
 
   socket.on("leave-lobby", ({ lobbyKey }) => {
@@ -106,6 +112,23 @@ io.on("connection", (socket) => {
   });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(process.cwd(), "dist")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(process.cwd(), "dist", "index.html"));
+    });
+  }
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
