@@ -104,11 +104,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    const info = socketToPlayer[socket.id];
-    if (info) {
-      handleLeave(info.lobbyKey, info.playerId);
-    }
-    console.log("User disconnected:", socket.id);
+    // We don't remove players on disconnect anymore to allow re-joining via localStorage
+    console.log("User disconnected (waiting for potential re-join):", socket.id);
   });
 });
 
